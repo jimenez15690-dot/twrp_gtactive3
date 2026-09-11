@@ -54,26 +54,32 @@ jobs:
     - name: Build TWRP Recovery
       run: |
         cd twrp
+        export ALLOW_MISSING_DEPENDENCIES=true
         source build/envsetup.sh
-        lunch twrp_gtactive3-eng
-        mka recoveryimage -j$(nproc --all) || mka bootimage -j$(nproc --all)
+        lunch twrp_gtactive3-eng || lunch omni_gtactive3-eng
+        make recoveryimage -j$(nproc --all)
 
-    - name: Find and Pack Images
+    - name: Pack Recovery to TAR
       run: |
         cd twrp
-        echo "=== Gebaute Dateien im Target-Ordner ==="
-        find out/target/product/ -name "*.img"
-        
         mkdir -p output_images
-        # Kopiert alle erzeugten .img-Dateien (boot.img, recovery.img, vendor_boot.img)
+        
+        # Kopiert recovery.img oder boot.img
         find out/target/product/ -name "*.img" -exec cp {} output_images/ \;
         
-        # Erstellt eine TAR-Datei aus allen gefundenen Images für Odin
         cd output_images
-        tar -cvf twrp_odin.tar *.img
+        if [ -f recovery.img ]; then
+          tar -cvf recovery.tar recovery.img
+        elif [ -f boot.img ]; then
+          tar -cvf recovery.tar boot.img
+        else
+          echo "Keine Image-Datei gefunden!"
+          exit 1
+        fi
 
     - name: Upload Recovery Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: TWRP_SM-T575_Build
-        path: twrp/output_images/
+        name: TWRP_SM-T575_Recovery
+        path: twrp/out
+        put_images/
