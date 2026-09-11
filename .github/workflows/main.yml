@@ -37,7 +37,7 @@ jobs:
       run: |
         mkdir twrp
         cd twrp
-        repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni.git -b twrp-11.0
+        repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-11
         repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags
 
     - name: Clone Device Tree
@@ -48,7 +48,7 @@ jobs:
     - name: Patch Device Tree Paths
       run: |
         cd twrp/device/samsung/gtactive3
-        sed -i 's|vendor/omni/config/common.mk|vendor/twrp/config/common.mk|g' twrp_gtactive3.mk
+        sed -i 's|vendor/omni/config/common.mk|vendor/twrp/config/common.mk|g' twrp_gtactive3.mk || true
         sed -i 's|vendor/omni/config/common.mk|vendor/twrp/config/common.mk|g' AndroidProducts.mk || true
 
     - name: Build TWRP Recovery
@@ -69,4 +69,5 @@ jobs:
         name: TWRP_SM-T575_Recovery
         path: |
           twrp/out/target/product/gtactive3/recovery.img
-          twrp/out/target/product/gtactive3/recovery.tar
+          twrp/out/target/product/gtactive3/r
+          ecovery.tar
