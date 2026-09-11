@@ -60,7 +60,15 @@ jobs:
 
     - name: Pack Recovery to TAR
       run: |
-        cd twrp/out/target/product/gtactive3/
+        cd twrp
+        # Findet das gebaute recovery.img dynamisch im out-Ordner
+        RECOVERY_PATH=$(find out/target/product/ -name "recovery.img" | head -n 1)
+        if [ -z "$RECOVERY_PATH" ]; then
+          echo "Fehler: recovery.img wurde nicht gefunden!"
+          exit 1
+        fi
+        DIR_PATH=$(dirname "$RECOVERY_PATH")
+        cd "$DIR_PATH"
         tar -cvf recovery.tar recovery.img
 
     - name: Upload Recovery Artifact
@@ -68,6 +76,6 @@ jobs:
       with:
         name: TWRP_SM-T575_Recovery
         path: |
-          twrp/out/target/product/gtactive3/recovery.img
-          twrp/out/target/product/gtactive3/r
+          twrp/out/target/product/*/recovery.img
+          twrp/out/target/product/*/r
           ecovery.tar
