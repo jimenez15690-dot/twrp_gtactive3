@@ -45,11 +45,17 @@ jobs:
         cd twrp
         git clone https://github.com/jimenez15690-dot/twrp_gtactive3.git device/samsung/gtactive3
 
+    - name: Patch Device Tree Paths
+      run: |
+        cd twrp/device/samsung/gtactive3
+        sed -i 's|vendor/omni/config/common.mk|vendor/twrp/config/common.mk|g' twrp_gtactive3.mk
+        sed -i 's|vendor/omni/config/common.mk|vendor/twrp/config/common.mk|g' AndroidProducts.mk || true
+
     - name: Build TWRP Recovery
       run: |
         cd twrp
         source build/envsetup.sh
-        lunch omni_gtactive3-eng || lunch twrp_gtactive3-eng
+        lunch twrp_gtactive3-eng
         mka recoveryimage -j$(nproc --all)
 
     - name: Pack Recovery to TAR
@@ -63,4 +69,5 @@ jobs:
         name: TWRP_SM-T575_Recovery
         path: |
           twrp/out/target/product/gtactive3/recovery.img
-          twrp/out/target/product/gtactive3/recovery.tar
+          twrp/out/target/product/gtactive3/r
+          ecovery.tar
