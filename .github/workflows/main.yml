@@ -81,5 +81,4 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: TWRP_SM-T575_Recovery
-        path: twrp/out
-        put_images/
+        path: twrp/output_images/
