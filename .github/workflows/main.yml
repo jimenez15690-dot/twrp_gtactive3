@@ -28,7 +28,7 @@ jobs:
             lib32readline-dev lib32z1-dev libelf-dev liblz4-tool \
             libncurses5-dev libsdl1.2-dev libssl-dev libxml2-utils \
             lzop pngcrush rsync schedtool squashfs-tools xsltproc \
-            zip zlib1g-dev python3 python-is-python3
+            zip zlib1g-dev python3 python-is-python3 dos2unix
 
       - name: Setup repo tool
         run: |
@@ -64,12 +64,23 @@ jobs:
           cd "$GITHUB_WORKSPACE/twrp"
           DEV_DIR="device/samsung/gtactive3"
 
-          echo "=== Device tree structure ==="
-          ls -la "$DEV_DIR"
+          # 1. CRLF Windows-Zeilenumbrüche aus allen Skripten/Makefiles entfernen
+          find "$DEV_DIR" -type f \( -name "*.mk" -o -name "*.sh" \) -exec sed -i 's/\r$//' {} +
 
-          # 1. Basis omni_gtactive3.mk sicherstellen
-          if [ ! -f "$DEV_DIR/omni_gtactive3.mk" ]; then
-            cat > "$DEV_DIR/omni_gtactive3.mk" <<'EOF'
+          # 2. twrp_gtactive3.mk explizit definieren
+          cat > "$DEV_DIR/twrp_gtactive3.mk" <<'EOF'
+          $(call inherit-product, $(SRC_TARGET_DIR)/product/full_base_telephony.mk)
+          $(if $(wildcard device/samsung/gtactive3/device.mk),$(call inherit-product, device/samsung/gtactive3/device.mk))
+
+          PRODUCT_NAME := twrp_gtactive3
+          PRODUCT_DEVICE := gtactive3
+          PRODUCT_BRAND := samsung
+          PRODUCT_MODEL := Galaxy Tab Active3
+          PRODUCT_MANUFACTURER := samsung
+          EOF
+
+          # 3. omni_gtactive3.mk als Fallback definieren
+          cat > "$DEV_DIR/omni_gtactive3.mk" <<'EOF'
           $(call inherit-product, $(SRC_TARGET_DIR)/product/full_base_telephony.mk)
           $(if $(wildcard device/samsung/gtactive3/device.mk),$(call inherit-product, device/samsung/gtactive3/device.mk))
 
@@ -79,33 +90,23 @@ jobs:
           PRODUCT_MODEL := Galaxy Tab Active3
           PRODUCT_MANUFACTURER := samsung
           EOF
-          else
-            sed -i '/PRODUCT_NAME/d' "$DEV_DIR/omni_gtactive3.mk"
-            sed -i '/PRODUCT_DEVICE/d' "$DEV_DIR/omni_gtactive3.mk"
-            echo "PRODUCT_NAME := omni_gtactive3" >> "$DEV_DIR/omni_gtactive3.mk"
-            echo "PRODUCT_DEVICE := gtactive3" >> "$DEV_DIR/omni_gtactive3.mk"
-          fi
 
-          # 2. twrp_gtactive3.mk als Alias mit eigener PRODUCT_NAME anlegen
-          cp "$DEV_DIR/omni_gtactive3.mk" "$DEV_DIR/twrp_gtactive3.mk"
-          sed -i 's/PRODUCT_NAME := omni_gtactive3/PRODUCT_NAME := twrp_gtactive3/' "$DEV_DIR/twrp_gtactive3.mk"
-
-          # 3. AndroidProducts.mk neu schreiben und beide Produkte registrieren
+          # 4. AndroidProducts.mk komplett neu schreiben
           cat > "$DEV_DIR/AndroidProducts.mk" <<'EOF'
           LOCAL_DIR := $(call my-dir)
 
           PRODUCT_MAKEFILES := \
-              $(LOCAL_DIR)/omni_gtactive3.mk \
-              $(LOCAL_DIR)/twrp_gtactive3.mk
+              $(LOCAL_DIR)/twrp_gtactive3.mk \
+              $(LOCAL_DIR)/omni_gtactive3.mk
 
           COMMON_LUNCH_CHOICES := \
-              omni_gtactive3-eng \
-              omni_gtactive3-userdebug \
               twrp_gtactive3-eng \
-              twrp_gtactive3-userdebug
+              twrp_gtactive3-userdebug \
+              omni_gtactive3-eng \
+              omni_gtactive3-userdebug
           EOF
 
-          # 4. CI Build-Fixes in BoardConfig.mk injizieren
+          # 5. Recovery-Einstellungen in BoardConfig.mk sichern
           sed -i '/TARGET_NO_RECOVERY/d' "$DEV_DIR/BoardConfig.mk" 2>/dev/null || true
           sed -i '/BOARD_USES_RECOVERY_AS_BOOT/d' "$DEV_DIR/BoardConfig.mk" 2>/dev/null || true
           cat >> "$DEV_DIR/BoardConfig.mk" <<'EOF'
@@ -114,7 +115,7 @@ jobs:
           BOARD_USES_RECOVERY_AS_BOOT := false
           EOF
 
-          echo "=== AndroidProducts.mk ==="
+          echo "=== AndroidProducts.mk Inhaltsprüfung ==="
           cat "$DEV_DIR/AndroidProducts.mk"
 
       - name: Prepare build environment
@@ -132,7 +133,6 @@ jobs:
           echo "TARGET_BUILD_VARIANT=$TARGET_BUILD_VARIANT"
           echo "PRODUCT_DEVICE=$(get_build_var PRODUCT_DEVICE)"
           echo "PRODUCT_NAME=$(get_build_var PRODUCT_NAME)"
-          echo "TARGET_NO_RECOVERY=$(get_build_var TARGET_NO_RECOVERY)"
 
       - name: Build TWRP recovery image
         run: |
