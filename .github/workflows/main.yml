@@ -35,7 +35,7 @@ jobs:
         chmod a+x ~/bin/repo
         echo "$HOME/bin" >> $GITHUB_PATH
 
-    - name: Initialize TWRP Manifest & Sync
+    - name: Initialize TWRP Manifest
       run: |
         mkdir twrp
         cd twrp
@@ -47,46 +47,26 @@ jobs:
         cd twrp
         git clone https://github.com/jimenez15690-dot/twrp_gtactive3.git device/samsung/gtactive3
 
-    - name: Prepare Makefiles & Lunch Targets
+    - name: Fix Makefiles
       run: |
         cd twrp/device/samsung/gtactive3
         
-        # 1. Omni-Dateiname auf TWRP umbenennen
+        # Rename Omni to TWRP
         if [ -f omni_gtactive3.mk ]; then
           mv omni_gtactive3.mk twrp_gtactive3.mk
-          echo "✓ omni_gtactive3.mk → twrp_gtactive3.mk"
         fi
         
-        # 2. Omni-Referenzen in allen Makefiles anpassen
+        # Update all references
         for file in *.mk; do
           sed -i 's/omni_/twrp_/g' "$file"
           sed -i 's|vendor/omni/|vendor/twrp/|g' "$file"
         done
-        echo "✓ Makefile-Referenzen aktualisiert"
         
-        # 3. AndroidProducts.mk sauber für TWRP 11 definieren
-        cat << 'EOF' > AndroidProducts.mk
-PRODUCT_MAKEFILES := \
-    $(LOCAL_DIR)/twrp_gtactive3.mk
-
-COMMON_LUNCH_CHOICES := \
-    twrp_gtactive3-eng \
-    twrp_gtactive3-userdebug
+        # Create AndroidProducts.mk
+        cat > AndroidProducts.mk << 'EOF'
+PRODUCT_MAKEFILES := $(LOCAL_DIR)/twrp_gtactive3.mk
+COMMON_LUNCH_CHOICES := twrp_gtactive3-eng twrp_gtactive3-userdebug
 EOF
-        echo "✓ AndroidProducts.mk erstellt"
-
-    - name: Verify Lunch Target
-      run: |
-        cd twrp
-        source build/envsetup.sh
-        
-        # Prüfe, ob der Lunch-Target registriert ist
-        lunch twrp_gtactive3-eng > /tmp/lunch_output.log 2>&1 || {
-          echo "❌ Lunch-Target fehlgeschlagen!"
-          cat /tmp/lunch_output.log
-          exit 1
-        }
-        echo "✓ Lunch-Target erfolgreich geladen"
 
     - name: Build TWRP Recovery
       run: |
@@ -94,88 +74,40 @@ EOF
         export ALLOW_MISSING_DEPENDENCIES=true
         export LC_ALL=C
         source build/envsetup.sh
-        
         lunch twrp_gtactive3-eng
-        
-        # Kompiliere BEIDE bootimage UND recoveryimage (recovery-as-boot für Exynos 9810)
-        echo "▶ Starte Build: bootimage + recoveryimage..."
-        mka bootimage recoveryimage -j$(nproc --all) 2>&1 | tee /tmp/build_output.log
-        
-        BUILD_RESULT=${PIPESTATUS[0]}
-        if [ $BUILD_RESULT -ne 0 ]; then
-          echo "❌ Build fehlgeschlagen!"
-          tail -50 /tmp/build_output.log
-          exit 1
-        fi
-        echo "✓ Build erfolgreich abgeschlossen"
+        mka bootimage recoveryimage -j$(nproc --all)
 
-    - name: Pack Recovery to TAR
+    - name: Pack Recovery
       run: |
         cd twrp
         mkdir -p output_images
         
         TARGET_DIR="out/target/product/gtactive3"
         
-        echo "▶ Suche nach .img-Dateien in $TARGET_DIR..."
         if [ -d "$TARGET_DIR" ]; then
-          echo "📂 Inhalte von $TARGET_DIR:"
-          ls -lh "$TARGET_DIR"/ 2>/dev/null | grep -E "\.img|^total" || echo "  (keine .img-Dateien gefunden)"
-          
-          # Kopiere .img-Dateien (außer Ramdisk, Userdata, System, Vendor)
           find "$TARGET_DIR" -maxdepth 1 -type f -name "*.img" \
             ! -name "ramdisk*" ! -name "userdata*" ! -name "system*" ! -name "vendor*" \
-            -exec cp {} output_images/ \; 2>/dev/null
-        else
-          echo "⚠ $TARGET_DIR existiert nicht, suche im gesamten out/-Ordner..."
+            -exec cp {} output_images/ \;
         fi
         
-        # Fallback: Durchsuche das gesamte out/-Verzeichnis
         if [ -z "$(ls -A output_images)" ]; then
-          echo "▶ Fallback: Durchsuche out/ rekursiv..."
           find out/ -type f -name "*.img" \
             ! -name "ramdisk*" ! -name "userdata*" ! -name "system*" ! -name "vendor*" \
-            -exec cp {} output_images/ \; 2>/dev/null
+            -exec cp {} output_images/ \;
         fi
-
-        cd output_images
-        echo ""
-        echo "📦 Gefundene Images für TAR-Archiv:"
-        ls -lh
         
+        cd output_images
         if [ -z "$(ls -A .)" ]; then
-          echo "❌ FEHLER: Es wurden keine kompatiblen .img-Dateien erzeugt!"
-          echo "Dies kann folgende Ursachen haben:"
-          echo "  1. Device Tree Makefiles sind fehlerhaft"
-          echo "  2. Lunch-Target konnte nicht geladen werden"
-          echo "  3. Build fehlgeschlagen (siehe Log oben)"
+          echo "ERROR: No .img files found!"
           exit 1
         fi
         
         tar -cvf twrp_odin.tar *.img
-        echo "✓ TAR-Archiv erstellt: twrp_odin.tar"
-        ls -lh twrp_odin.tar
 
-    - name: Upload Recovery Artifact
+    - name: Upload Artifact
       if: success()
       uses: actions/upload-artifact@v4
       with:
         name: TWRP_SM-T575_Recovery
         path: twrp/output_images/twrp_odin.tar
         retention-days: 30
-
-    - name: Build Summary
-      if: always()
-      run: |
-        echo ""
-        echo "════════════════════════════════════════════════════════════════"
-        echo "               BUILD SUMMARY - Samsung Galaxy Tab Active 3"
-        echo "════════════════════════════════════════════════════════════════"
-        if [ -f "twrp/output_images/twrp_odin.tar" ]; then
-          echo "✅ BUILD ERFOLGREICH!"
-          echo "📦 Artifact: twrp/output_images/twrp_odin.tar"
-          ls -lh "twrp/output_images/twrp_odin.tar"
-        else
-          echo "❌ BUILD FEHLGESCHLAGEN!"
-          echo "Die TAR-Datei wurde nicht erstellt. Siehe Logs oben."
-        fi
-        echo "════════════════════════════════════════════════════════════════"
