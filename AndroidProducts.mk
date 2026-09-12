@@ -5,5 +5,4 @@ PRODUCT_MAKEFILES := \
 
 COMMON_LUNCH_CHOICES := \
     twrp_gtactive3-eng \
-    twrp_gtactive3-userdeb
-ug
+    twrp_gtactive3-userdebug
