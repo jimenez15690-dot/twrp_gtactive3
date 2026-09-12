@@ -53,6 +53,7 @@ jobs:
         sed -i 's|vendor/omni/config/common.mk|vendor/twrp/config/common.mk|g' *.mk || true
         sed -i 's|omni_gtactive3|twrp_gtactive3|g' AndroidProducts.mk || true
         sed -i 's|omni_gtactive3|twrp_gtactive3|g' twrp_gtactive3.mk || true
+        cp twrp_gtactive3.mk omni_gtactive3.mk || true
 
     - name: Build TWRP Recovery
       run: |
@@ -63,27 +64,25 @@ jobs:
         
         lunch twrp_gtactive3-eng || lunch omni_gtactive3-eng
         
-        # Baut alle potenziellen Image-Targets ab
-        mka recoveryimage || mka bootimage || mka vendorbootimage
+        make recoveryimage -j$(nproc --all) || make bootimage -j$(nproc --all)
 
     - name: Pack Recovery to TAR
       run: |
         cd twrp
         mkdir -p output_images
         
-        # Kopiert alle relevanten Ziel-Images aus dem Out-Ordner
-        find out/target/product/ -maxdepth 3 -type f -name "*.img" ! -name "ramdisk*" ! -name "userdata*" -exec cp {} output_images/ \;
+        # Durchsucht das gesamte out/-Verzeichnis nach allen erzeugten Image-Dateien
+        find out/ -type f -name "*.img" ! -name "ramdisk*" ! -name "userdata*" ! -name "system*" ! -name "vendor*" -exec cp {} output_images/ \;
         
         cd output_images
-        echo "=== Gefundene Ziel-Images ==="
+        echo "=== Gefundene Images im Output ==="
         ls -lh
         
         if [ -z "$(ls -A .)" ]; then
-          echo "Fehler: Es wurden keine kompatiblen .img-Dateien erzeugt."
+          echo "Fehler: Es wurden keine kompatiblen .img-Dateien im out-Verzeichnis erzeugt."
           exit 1
         fi
         
-        # Erstellt das TAR-Archiv für Odin
         tar -cvf twrp_odin.tar *.img
 
     - name: Upload Recovery Artifact
