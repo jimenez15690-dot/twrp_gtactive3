@@ -64,13 +64,12 @@ jobs:
           cd "$GITHUB_WORKSPACE/twrp"
           DEV_DIR="device/samsung/gtactive3"
 
-          # 1. CRLF Windows-Zeilenumbrüche aus allen Skripten/Makefiles entfernen
+          # 1. Zeilenumbrüche korrigieren (Windows CRLF -> Linux LF)
           find "$DEV_DIR" -type f \( -name "*.mk" -o -name "*.sh" \) -exec sed -i 's/\r$//' {} +
 
-          # 2. twrp_gtactive3.mk explizit definieren
+          # 2. Produkt-Makefile sauber neu erstellen
           cat > "$DEV_DIR/twrp_gtactive3.mk" <<'EOF'
           $(call inherit-product, $(SRC_TARGET_DIR)/product/full_base_telephony.mk)
-          $(if $(wildcard device/samsung/gtactive3/device.mk),$(call inherit-product, device/samsung/gtactive3/device.mk))
 
           PRODUCT_NAME := twrp_gtactive3
           PRODUCT_DEVICE := gtactive3
@@ -79,34 +78,19 @@ jobs:
           PRODUCT_MANUFACTURER := samsung
           EOF
 
-          # 3. omni_gtactive3.mk als Fallback definieren
-          cat > "$DEV_DIR/omni_gtactive3.mk" <<'EOF'
-          $(call inherit-product, $(SRC_TARGET_DIR)/product/full_base_telephony.mk)
-          $(if $(wildcard device/samsung/gtactive3/device.mk),$(call inherit-product, device/samsung/gtactive3/device.mk))
-
-          PRODUCT_NAME := omni_gtactive3
-          PRODUCT_DEVICE := gtactive3
-          PRODUCT_BRAND := samsung
-          PRODUCT_MODEL := Galaxy Tab Active3
-          PRODUCT_MANUFACTURER := samsung
-          EOF
-
-          # 4. AndroidProducts.mk komplett neu schreiben
+          # 3. AndroidProducts.mk auf genau eine Datei begrenzen
           cat > "$DEV_DIR/AndroidProducts.mk" <<'EOF'
           LOCAL_DIR := $(call my-dir)
 
           PRODUCT_MAKEFILES := \
-              $(LOCAL_DIR)/twrp_gtactive3.mk \
-              $(LOCAL_DIR)/omni_gtactive3.mk
+              $(LOCAL_DIR)/twrp_gtactive3.mk
 
           COMMON_LUNCH_CHOICES := \
               twrp_gtactive3-eng \
-              twrp_gtactive3-userdebug \
-              omni_gtactive3-eng \
-              omni_gtactive3-userdebug
+              twrp_gtactive3-userdebug
           EOF
 
-          # 5. Recovery-Einstellungen in BoardConfig.mk sichern
+          # 4. CI Build-Fixes in BoardConfig.mk sicherstellen
           sed -i '/TARGET_NO_RECOVERY/d' "$DEV_DIR/BoardConfig.mk" 2>/dev/null || true
           sed -i '/BOARD_USES_RECOVERY_AS_BOOT/d' "$DEV_DIR/BoardConfig.mk" 2>/dev/null || true
           cat >> "$DEV_DIR/BoardConfig.mk" <<'EOF'
@@ -115,15 +99,17 @@ jobs:
           BOARD_USES_RECOVERY_AS_BOOT := false
           EOF
 
-          echo "=== AndroidProducts.mk Inhaltsprüfung ==="
+          echo "=== AndroidProducts.mk ==="
           cat "$DEV_DIR/AndroidProducts.mk"
+          echo "=== twrp_gtactive3.mk ==="
+          cat "$DEV_DIR/twrp_gtactive3.mk"
 
       - name: Prepare build environment
         run: |
           cd "$GITHUB_WORKSPACE/twrp"
           source build/envsetup.sh
 
-          lunch twrp_gtactive3-eng || lunch omni_gtactive3-eng
+          lunch twrp_gtactive3-eng
 
           export TARGET_DEVICE=gtactive3
 
@@ -138,7 +124,7 @@ jobs:
         run: |
           cd "$GITHUB_WORKSPACE/twrp"
           source build/envsetup.sh
-          lunch twrp_gtactive3-eng || lunch omni_gtactive3-eng
+          lunch twrp_gtactive3-eng
           export TARGET_DEVICE=gtactive3
 
           rm -rf out/target/product/gtactive3/recovery.img
