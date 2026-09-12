@@ -1,11 +1,14 @@
 name: Build TWRP for Tab Active 3
+
 on:
   workflow_dispatch:
+
 jobs:
   build:
     runs-on: ubuntu-22.04
     permissions:
       contents: write
+
     steps:
     - name: Free Disk Space
       uses: jlumbroso/free-disk-space@main
@@ -15,65 +18,92 @@ jobs:
         dotnet: true
         haskell: true
         large-packages: true
+
     - name: Install Build Dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y bc build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses5-dev lib32z1-dev liblz4-tool libncurses5 libncurses5-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python-is-python3 python3
+        sudo apt-get install -y \
+          bc build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf \
+          imagemagick lib32ncurses5-dev lib32z1-dev liblz4-tool libncurses5 libncurses5-dev \
+          libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool \
+          squashfs-tools xsltproc zip zlib1g-dev python-is-python3 python3
+
     - name: Setup Repo Tool
       run: |
         mkdir -p ~/bin
         curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
         chmod a+x ~/bin/repo
         echo "$HOME/bin" >> $GITHUB_PATH
+
     - name: Initialize TWRP Manifest
       run: |
+        git config --global user.name "GitHub Actions"
+        git config --global user.email "actions@github.com"
         mkdir twrp
         cd twrp
-        repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-11
-        repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags
+        repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-11 --depth=1
+        repo sync -c -j4 --force-sync --no-clone-bundle --no-tags
+
     - name: Clone Device Tree
       run: |
         cd twrp
         git clone https://github.com/jimenez15690-dot/twrp_gtactive3.git device/samsung/gtactive3
+
     - name: Fix Makefiles
       run: |
         cd twrp/device/samsung/gtactive3
+        
         if [ -f omni_gtactive3.mk ]; then
           mv omni_gtactive3.mk twrp_gtactive3.mk
         fi
+        
         for file in *.mk; do
           sed -i 's/omni_/twrp_/g' "$file"
           sed -i 's|vendor/omni/|vendor/twrp/|g' "$file"
         done
+        
         cat > AndroidProducts.mk << 'EOF'
-PRODUCT_MAKEFILES := $(LOCAL_DIR)/twrp_gtactive3.mk
-COMMON_LUNCH_CHOICES := twrp_gtactive3-eng twrp_gtactive3-userdebug
-EOF
+        PRODUCT_MAKEFILES := $(LOCAL_DIR)/twrp_gtactive3.mk
+        COMMON_LUNCH_CHOICES := twrp_gtactive3-eng twrp_gtactive3-userdebug
+        EOF
+
     - name: Build TWRP Recovery
       run: |
         cd twrp
         export ALLOW_MISSING_DEPENDENCIES=true
         export LC_ALL=C
         source build/envsetup.sh
+        
         lunch twrp_gtactive3-eng || exit 1
-        mka recoveryimage bootimage -j$(nproc --all) || exit 1
+        mka recoveryimage bootimage -j$(nproc --all)
+
     - name: Pack Recovery
       run: |
         cd twrp
         mkdir -p output_images
+        
         TARGET_DIR="out/target/product/gtactive3"
+        
         if [ -d "$TARGET_DIR" ]; then
-          find "$TARGET_DIR" -maxdepth 1 -type f -name "*.img" ! -name "ramdisk*" ! -name "userdata*" ! -name "system*" ! -name "vendor*" -exec cp {} output_images/ \;
+          find "$TARGET_DIR" -maxdepth 1 -type f -name "*.img" \
+            ! -name "ramdisk*" ! -name "userdata*" ! -name "system*" ! -name "vendor*" \
+            -exec cp {} output_images/ \;
         fi
+        
         if [ -z "$(ls -A output_images)" ]; then
-          find out/ -type f -name "*.img" ! -name "ramdisk*" ! -name "userdata*" ! -name "system*" ! -name "vendor*" -exec cp {} output_images/ \;
+          find out/ -type f -name "*.img" \
+            ! -name "ramdisk*" ! -name "userdata*" ! -name "system*" ! -name "vendor*" \
+            -exec cp {} output_images/ \;
         fi
+        
         cd output_images
         if [ -z "$(ls -A .)" ]; then
           echo "ERROR: No .img files found!"
           exit 1
         fi
+        
         tar -cvf twrp_odin.tar *.img
+
     - name: Upload Artifact
       if: success()
       uses: actions/upload-artifact@v4
