@@ -62,10 +62,14 @@ jobs:
           sed -i 's|vendor/omni/|vendor/twrp/|g' "$file"
         done
         
-        # Create AndroidProducts.mk
+        # Create AndroidProducts.mk with proper formatting
         cat > AndroidProducts.mk << 'EOF'
-PRODUCT_MAKEFILES := $(LOCAL_DIR)/twrp_gtactive3.mk
-COMMON_LUNCH_CHOICES := twrp_gtactive3-eng twrp_gtactive3-userdebug
+PRODUCT_MAKEFILES := \
+    $(LOCAL_DIR)/twrp_gtactive3.mk
+
+COMMON_LUNCH_CHOICES := \
+    twrp_gtactive3-eng \
+    twrp_gtactive3-userdebug
 EOF
 
     - name: Build TWRP Recovery
@@ -74,8 +78,12 @@ EOF
         export ALLOW_MISSING_DEPENDENCIES=true
         export LC_ALL=C
         source build/envsetup.sh
-        lunch twrp_gtactive3-eng
-        mka bootimage recoveryimage -j$(nproc --all)
+        
+        # Verify lunch target is available
+        lunch twrp_gtactive3-eng || { echo "ERROR: Lunch target failed!"; exit 1; }
+        
+        # Build recoveryimage first, then bootimage
+        mka recoveryimage bootimage -j$(nproc --all) || { echo "ERROR: Build failed!"; exit 1; }
 
     - name: Pack Recovery
       run: |
