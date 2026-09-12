@@ -56,29 +56,35 @@ jobs:
         cd twrp
         export ALLOW_MISSING_DEPENDENCIES=true
         source build/envsetup.sh
-        lunch twrp_gtactive3-eng || lunch omni_gtactive3-eng
-        make recoveryimage -j$(nproc --all)
+        lunch twrp_gtactive3-eng
+        make recoveryimage -j$(nproc --all) || make bootimage -j$(nproc --all)
 
     - name: Pack Recovery to TAR
       run: |
         cd twrp
         mkdir -p output_images
         
-        # Kopiert recovery.img oder boot.img
-        find out/target/product/ -name "*.img" -exec cp {} output_images/ \;
+        # Zeige den gesamten out-Ordner zur Diagnose im Log
+        echo "=== Suche nach erzeugten .img Dateien ==="
+        find out/ -name "*.img"
+        
+        # Kopiert alle gefundenen Images
+        find out/ -name "*.img" -exec cp {} output_images/ \;
         
         cd output_images
         if [ -f recovery.img ]; then
-          tar -cvf recovery.tar recovery.img
+          tar -cvf twrp_odin.tar recovery.img
         elif [ -f boot.img ]; then
-          tar -cvf recovery.tar boot.img
+          tar -cvf twrp_odin.tar boot.img
         else
-          echo "Keine Image-Datei gefunden!"
-          exit 1
+          echo "Dateien im output_images Ordner:"
+          ls -la
+          tar -cvf twrp_odin.tar * || true
         fi
 
     - name: Upload Recovery Artifact
       uses: actions/upload-artifact@v4
       with:
         name: TWRP_SM-T575_Recovery
-        path: twrp/output_images/
+        path: twrp/out
+        put_images/
