@@ -57,33 +57,40 @@ jobs:
         export ALLOW_MISSING_DEPENDENCIES=true
         source build/envsetup.sh
         lunch twrp_gtactive3-eng
-        make recoveryimage -j$(nproc --all) || make bootimage -j$(nproc --all)
+        make bootimage -j$(nproc --all) || make recoveryimage -j$(nproc --all)
 
     - name: Pack Recovery to TAR
       run: |
         cd twrp
         mkdir -p output_images
         
-        # Zeige den gesamten out-Ordner zur Diagnose im Log
-        echo "=== Suche nach erzeugten .img Dateien ==="
-        find out/ -name "*.img"
+        # Gezielt im Product-Output-Ordner nach allen gebauten Images suchen
+        OUT_DIR="out/target/product/gtactive3"
         
-        # Kopiert alle gefundenen Images
-        find out/ -name "*.img" -exec cp {} output_images/ \;
-        
-        cd output_images
-        if [ -f recovery.img ]; then
-          tar -cvf twrp_odin.tar recovery.img
-        elif [ -f boot.img ]; then
-          tar -cvf twrp_odin.tar boot.img
-        else
-          echo "Dateien im output_images Ordner:"
-          ls -la
-          tar -cvf twrp_odin.tar * || true
+        if [ -d "$OUT_DIR" ]; then
+          cp $OUT_DIR/*.img output_images/ 2>/dev/null || true
         fi
+        
+        # Fallback: Falls der Ordnername abweicht, den gesamten Target-Ordner durchsuchen
+        if [ -z "$(ls -A output_images)" ]; then
+          find out/target/product/ -maxdepth 2 -name "*.img" -exec cp {} output_images/ \;
+        fi
+
+        cd output_images
+        echo "Gefundene Dateien:"
+        ls -lh
+        
+        # Mindestens eine Datei muss da sein, sonst explizit abbrechen
+        if [ -z "$(ls -A .)" ]; then
+          echo "Fehler: Es wurden keine .img Dateien gebaut!"
+          exit 1
+        fi
+        
+        tar -cvf twrp_odin.tar *.img
 
     - name: Upload Recovery Artifact
       uses: actions/upload-artifact@v4
       with:
         name: TWRP_SM-T575_Recovery
-        path: twrp/output_images/
+        path: twrp/output_images/t
+        wrp_odin.tar
