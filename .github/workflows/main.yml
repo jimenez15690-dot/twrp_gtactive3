@@ -92,5 +92,4 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: TWRP_SM-T575_Recovery
-        path: twrp/output_images/t
-        wrp_odin.tar
+        path: twrp/output_images/twrp_odin.tar
