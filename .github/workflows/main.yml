@@ -50,13 +50,18 @@ jobs:
     - name: Prepare Makefiles & Lunch Targets
       run: |
         cd twrp/device/samsung/gtactive3
-        # Veraltete Omni-Pfade auf TWRP umbiegen
-        sed -i 's|vendor/omni/config/common.mk|vendor/twrp/config/common.mk|g' *.mk || true
         
-        # Makefiles angleichen
-        cp twrp_gtactive3.mk omni_gtactive3.mk 2>/dev/null || cp omni_gtactive3.mk twrp_gtactive3.mk 2>/dev/null || true
+        # 1. Omni-Dateiname auf TWRP umbenennen
+        if [ -f omni_gtactive3.mk ]; then
+          mv omni_gtactive3.mk twrp_gtactive3.mk
+        fi
         
-        # Saubere AndroidProducts.mk für AOSP/TWRP 11 erstellen
+        # 2. Omni-Referenzen in allen Makefiles anpassen
+        sed -i 's/omni_/twrp_/g' *.mk 2>/dev/null || true
+        sed -i 's|vendor/omni/|vendor/twrp/|g' *.mk 2>/dev/null || true
+        sed -i 's/PRODUCT_NAME := omni_gtactive3/PRODUCT_NAME := twrp_gtactive3/g' *.mk 2>/dev/null || true
+        
+        # 3. AndroidProducts.mk sauber für TWRP 11 definieren
         cat << 'EOF' > AndroidProducts.mk
         PRODUCT_MAKEFILES := \
             $(LOCAL_DIR)/twrp_gtactive3.mk
@@ -73,22 +78,37 @@ jobs:
         export LC_ALL=C
         source build/envsetup.sh
         
+        # Target vorbereiten & prüfen
         lunch twrp_gtactive3-eng
-        mka recoveryimage -j$(nproc --all)
+        
+        # Kompilieren von recoveryimage UND bootimage
+        mka recoveryimage bootimage -j$(nproc --all)
 
     - name: Pack Recovery to TAR
       run: |
         cd twrp
         mkdir -p output_images
         
-        find out/target/product/ -type f -name "*.img" ! -name "ramdisk*" ! -name "userdata*" ! -name "system*" ! -name "vendor*" -exec cp {} output_images/ \;
+        TARGET_DIR="out/target/product/gtactive3"
         
+        echo "=== Überprüfe Zielordner $TARGET_DIR ==="
+        if [ -d "$TARGET_DIR" ]; then
+          ls -lh "$TARGET_DIR"/*.img 2>/dev/null || true
+          cp "$TARGET_DIR"/*.img output_images/ 2>/dev/null || true
+        fi
+        
+        # Fallback: Durchsuche das gesamte out/-Verzeichnis
+        if [ -z "$(ls -A output_images)" ]; then
+          echo "Suche im gesamten out/-Ordner nach fertigen Images..."
+          find out/ -type f -name "*.img" ! -name "ramdisk*" ! -name "userdata*" ! -name "system*" ! -name "vendor*" -exec cp {} output_images/ \;
+        fi
+
         cd output_images
-        echo "=== Gefundene Images ==="
+        echo "=== Gefundene Images für TAR-Archiv ==="
         ls -lh
         
         if [ -z "$(ls -A .)" ]; then
-          echo "Fehler: Keine Image-Dateien erzeugt."
+          echo "Fehler: Es wurden keine kompatiblen .img-Dateien erzeugt."
           exit 1
         fi
         
