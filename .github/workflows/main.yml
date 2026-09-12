@@ -1,51 +1,3 @@
-    - name: Build TWRP Recovery
-      run: |
-        cd twrp
-        export ALLOW_MISSING_DEPENDENCIES=true
-        export LC_ALL=C
-        source build/envsetup.sh
-        
-        lunch twrp_gtactive3-eng
-        
-        # Baut sowohl recoveryimage als auch bootimage für recovery-as-boot
-        mka bootimage recoveryimage -j$(nproc --all)
-
-    - name: Pack Recovery to TAR
-      run: |
-        cd twrp
-        mkdir -p output_images
-        
-        # Durchsucht das gesamte out/-Verzeichnis nach erzeugten .img-Dateien
-        find out/ -type f -name "*.img" ! -name "ramdisk*" ! -name "userdata*" ! -name "system*" ! -name "vendor*" -exec cp {} output_images/ \;
-        
-        cd output_images
-        echo "=== Gefundene Images ==="
-        ls -lh
-        
-        if [ -z "$(ls -A .)" ]; then
-          echo "Fehler: Keine Image-Dateien erzeugt."
-          exit 1
-        fi
-        
-        tar -cvf twrp_odin.tar *.img
-
---------------------------------------------------------------------------------
-
-[NUTZER]:
-Nimm alle Infos die du bis jetzt bekommen. Hast und löse das Problem
-
---------------------------------------------------------------------------------
-
-[ASSISTENT]:
-Hier ist die Gesamtanalyse aller bisherigen Logs und Screenshots sowie die vollständige, erstklassig konfigurierte Lösung für das Samsung Galaxy Tab Active 3 (SM-T575 / gtactive3).
-
-1. Die Ursachenanalyse (Warum es bisher fehlschlug)
-- Namenskonflikt im Device Tree (omni_ vs twrp_): Das geklonte Repository jimenez15690-dot/twrp_gtactive3 basiert auf einer alten OmniROM-Struktur (omni_gtactive3.mk). Wenn das Skript lunch twrp_gtactive3-eng aufgerufen hat, konnte AOSP das Gerät nicht zuordnen.
-- Kompilier-Ziel für Samsung Exynos 9810 (recovery-as-boot): Beim Tab Active 3 ist die TWRP Recovery direkt im bootimage oder recoveryimage integriert. Es müssen zwingend beide Targets (bootimage und recoveryimage) gebaut werden.
-- Leeres out/-Verzeichnis (total 0): Weil lunch fehlschlug und die Befehle mit || true maskiert waren, wurde der Schritt Build TWRP Recovery grün als "erfolgreich" markiert, obwohl keine .img-Dateien erzeugt wurden.
-
-2. Die finale .github/workflows/build.yml
-
 name: Build TWRP for Tab Active 3
 
 on:
@@ -83,7 +35,7 @@ jobs:
         chmod a+x ~/bin/repo
         echo "$HOME/bin" >> $GITHUB_PATH
 
-    - name: Initialize TWRP Manifest & Sync
+    - name: Initialize TWRP Manifest
       run: |
         mkdir twrp
         cd twrp
@@ -95,29 +47,26 @@ jobs:
         cd twrp
         git clone https://github.com/jimenez15690-dot/twrp_gtactive3.git device/samsung/gtactive3
 
-    - name: Prepare Makefiles & Lunch Targets
+    - name: Fix Makefiles
       run: |
         cd twrp/device/samsung/gtactive3
         
-        # 1. Omni-Dateiname auf TWRP umbenennen
+        # Rename Omni to TWRP
         if [ -f omni_gtactive3.mk ]; then
           mv omni_gtactive3.mk twrp_gtactive3.mk
         fi
         
-        # 2. Omni-Referenzen in allen Makefiles anpassen
-        sed -i 's/omni_/twrp_/g' *.mk 2>/dev/null || true
-        sed -i 's|vendor/omni/|vendor/twrp/|g' *.mk 2>/dev/null || true
-        sed -i 's/PRODUCT_NAME := omni_gtactive3/PRODUCT_NAME := twrp_gtactive3/g' *.mk 2>/dev/null || true
+        # Update all references
+        for file in *.mk; do
+          sed -i 's/omni_/twrp_/g' "$file"
+          sed -i 's|vendor/omni/|vendor/twrp/|g' "$file"
+        done
         
-        # 3. AndroidProducts.mk sauber für TWRP 11 definieren
-        cat << 'EOF' > AndroidProducts.mk
-        PRODUCT_MAKEFILES := \
-            $(LOCAL_DIR)/twrp_gtactive3.mk
-
-        COMMON_LUNCH_CHOICES := \
-            twrp_gtactive3-eng \
-            twrp_gtactive3-userdebug
-        EOF
+        # Create AndroidProducts.mk
+        cat > AndroidProducts.mk << 'EOF'
+PRODUCT_MAKEFILES := $(LOCAL_DIR)/twrp_gtactive3.mk
+COMMON_LUNCH_CHOICES := twrp_gtactive3-eng twrp_gtactive3-userdebug
+EOF
 
     - name: Build TWRP Recovery
       run: |
@@ -125,45 +74,40 @@ jobs:
         export ALLOW_MISSING_DEPENDENCIES=true
         export LC_ALL=C
         source build/envsetup.sh
-        
-        # Target vorbereiten & prüfen
         lunch twrp_gtactive3-eng
-        
-        # Kompilieren von recoveryimage UND bootimage
-        mka recoveryimage bootimage -j$(nproc --all)
+        mka bootimage recoveryimage -j$(nproc --all)
 
-    - name: Pack Recovery to TAR
+    - name: Pack Recovery
       run: |
         cd twrp
         mkdir -p output_images
         
         TARGET_DIR="out/target/product/gtactive3"
         
-        echo "=== Überprüfe Zielordner $TARGET_DIR ==="
         if [ -d "$TARGET_DIR" ]; then
-          ls -lh "$TARGET_DIR"/*.img 2>/dev/null || true
-          cp "$TARGET_DIR"/*.img output_images/ 2>/dev/null || true
+          find "$TARGET_DIR" -maxdepth 1 -type f -name "*.img" \
+            ! -name "ramdisk*" ! -name "userdata*" ! -name "system*" ! -name "vendor*" \
+            -exec cp {} output_images/ \;
         fi
         
-        # Fallback: Durchsuche das gesamte out/-Verzeichnis
         if [ -z "$(ls -A output_images)" ]; then
-          echo "Suche im gesamten out/-Ordner nach fertigen Images..."
-          find out/ -type f -name "*.img" ! -name "ramdisk*" ! -name "userdata*" ! -name "system*" ! -name "vendor*" -exec cp {} output_images/ \;
+          find out/ -type f -name "*.img" \
+            ! -name "ramdisk*" ! -name "userdata*" ! -name "system*" ! -name "vendor*" \
+            -exec cp {} output_images/ \;
         fi
-
-        cd output_images
-        echo "=== Gefundene Images für TAR-Archiv ==="
-        ls -lh
         
+        cd output_images
         if [ -z "$(ls -A .)" ]; then
-          echo "Fehler: Es wurden keine kompatiblen .img-Dateien erzeugt."
+          echo "ERROR: No .img files found!"
           exit 1
         fi
         
         tar -cvf twrp_odin.tar *.img
 
-    - name: Upload Recovery Artifact
+    - name: Upload Artifact
+      if: success()
       uses: actions/upload-artifact@v4
       with:
         name: TWRP_SM-T575_Recovery
         path: twrp/output_images/twrp_odin.tar
+        retention-days: 30
