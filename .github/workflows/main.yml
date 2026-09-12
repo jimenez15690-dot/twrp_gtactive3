@@ -47,13 +47,24 @@ jobs:
         cd twrp
         git clone https://github.com/jimenez15690-dot/twrp_gtactive3.git device/samsung/gtactive3
 
-    - name: Fix Device Tree Makefiles
+    - name: Prepare Makefiles & Lunch Targets
       run: |
         cd twrp/device/samsung/gtactive3
+        # Veraltete Omni-Pfade auf TWRP umbiegen
         sed -i 's|vendor/omni/config/common.mk|vendor/twrp/config/common.mk|g' *.mk || true
-        sed -i 's|omni_gtactive3|twrp_gtactive3|g' AndroidProducts.mk || true
-        sed -i 's|omni_gtactive3|twrp_gtactive3|g' twrp_gtactive3.mk || true
-        cp twrp_gtactive3.mk omni_gtactive3.mk || true
+        
+        # Makefiles angleichen
+        cp twrp_gtactive3.mk omni_gtactive3.mk 2>/dev/null || cp omni_gtactive3.mk twrp_gtactive3.mk 2>/dev/null || true
+        
+        # Saubere AndroidProducts.mk für AOSP/TWRP 11 erstellen
+        cat << 'EOF' > AndroidProducts.mk
+        PRODUCT_MAKEFILES := \
+            $(LOCAL_DIR)/twrp_gtactive3.mk
+
+        COMMON_LUNCH_CHOICES := \
+            twrp_gtactive3-eng \
+            twrp_gtactive3-userdebug
+        EOF
 
     - name: Build TWRP Recovery
       run: |
@@ -62,24 +73,22 @@ jobs:
         export LC_ALL=C
         source build/envsetup.sh
         
-        lunch twrp_gtactive3-eng || lunch omni_gtactive3-eng
-        
-        make recoveryimage -j$(nproc --all) || make bootimage -j$(nproc --all)
+        lunch twrp_gtactive3-eng
+        mka recoveryimage -j$(nproc --all)
 
     - name: Pack Recovery to TAR
       run: |
         cd twrp
         mkdir -p output_images
         
-        # Durchsucht das gesamte out/-Verzeichnis nach allen erzeugten Image-Dateien
-        find out/ -type f -name "*.img" ! -name "ramdisk*" ! -name "userdata*" ! -name "system*" ! -name "vendor*" -exec cp {} output_images/ \;
+        find out/target/product/ -type f -name "*.img" ! -name "ramdisk*" ! -name "userdata*" ! -name "system*" ! -name "vendor*" -exec cp {} output_images/ \;
         
         cd output_images
-        echo "=== Gefundene Images im Output ==="
+        echo "=== Gefundene Images ==="
         ls -lh
         
         if [ -z "$(ls -A .)" ]; then
-          echo "Fehler: Es wurden keine kompatiblen .img-Dateien im out-Verzeichnis erzeugt."
+          echo "Fehler: Keine Image-Dateien erzeugt."
           exit 1
         fi
         
