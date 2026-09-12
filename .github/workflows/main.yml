@@ -48,32 +48,27 @@ jobs:
     - name: Fix Device Tree Makefiles
       run: |
         cd twrp/device/samsung/gtactive3
-        # Passt omni_ auf twrp_ Präfixe an
         sed -i 's|vendor/omni/config/common.mk|vendor/twrp/config/common.mk|g' *.mk || true
         sed -i 's|omni_gtactive3|twrp_gtactive3|g' AndroidProducts.mk || true
         sed -i 's|omni_gtactive3|twrp_gtactive3|g' twrp_gtactive3.mk || true
-        
-        # Erstellt eine Kopie als fallback_target
-        cp twrp_gtactive3.mk omni_gtactive3.mk || true
 
-    - name: Build TWRP Recovery
+    - name: Build TWRP Recovery (Strict Mode)
       run: |
         cd twrp
         export ALLOW_MISSING_DEPENDENCIES=true
         source build/envsetup.sh
         
-        # Versuche zuerst twrp_gtactive3, sonst Fallback auf omni_gtactive3
-        lunch twrp_gtactive3-eng || lunch omni_gtactive3-eng
+        # Target explizit setzen
+        lunch twrp_gtactive3-eng
         
-        # Führt den echten Recovery-Build durch
-        mka recoveryimage -j$(nproc --all) || mka bootimage -j$(nproc --all)
+        # Baut genau das Recovery-Image und bricht bei Fehlern sofort ab
+        mka recoveryimage
 
     - name: Pack Recovery to TAR
       run: |
         cd twrp
         mkdir -p output_images
         
-        # Rekursive Suche im gesamten out/ Ordner nach .img Dateien
         find out/target/product/ -type f -name "*.img" -exec cp {} output_images/ \;
         
         cd output_images
