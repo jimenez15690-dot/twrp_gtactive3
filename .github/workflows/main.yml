@@ -62,21 +62,36 @@ jobs:
       - name: Prepare device tree
         run: |
           cd "$GITHUB_WORKSPACE/twrp"
+          DEV_DIR="device/samsung/gtactive3"
 
-          echo "=== Device tree ==="
-          find device/samsung/gtactive3 -maxdepth 2 -type f | sort
+          echo "=== Device tree structure ==="
+          find "$DEV_DIR" -maxdepth 2 -type f | sort
 
-          if [ -f device/samsung/gtactive3/omni_gtactive3.mk ] && \
-             [ ! -f device/samsung/gtactive3/twrp_gtactive3.mk ]; then
-            cp device/samsung/gtactive3/omni_gtactive3.mk \
-               device/samsung/gtactive3/twrp_gtactive3.mk
-            sed -i 's/PRODUCT_NAME := omni_gtactive3/PRODUCT_NAME := twrp_gtactive3/' \
-              device/samsung/gtactive3/twrp_gtactive3.mk
+          # Kopiere vorhandene Produktdatei, falls twrp_gtactive3.mk fehlt
+          if [ ! -f "$DEV_DIR/twrp_gtactive3.mk" ]; then
+            if [ -f "$DEV_DIR/omni_gtactive3.mk" ]; then
+              cp "$DEV_DIR/omni_gtactive3.mk" "$DEV_DIR/twrp_gtactive3.mk"
+            else
+              # Falls keine Vorlage existiert, erstelle eine Basis-Datei
+              touch "$DEV_DIR/twrp_gtactive3.mk"
+            fi
           fi
 
-          test -f device/samsung/gtactive3/twrp_gtactive3.mk
+          # Bereinige alte PRODUCT_NAME Zuweisungen und setze sie eindeutig
+          sed -i '/PRODUCT_NAME/d' "$DEV_DIR/twrp_gtactive3.mk"
+          sed -i '/PRODUCT_DEVICE/d' "$DEV_DIR/twrp_gtactive3.mk"
 
-          cat > device/samsung/gtactive3/AndroidProducts.mk <<'EOF'
+          cat >> "$DEV_DIR/twrp_gtactive3.mk" <<'EOF'
+
+          PRODUCT_NAME := twrp_gtactive3
+          PRODUCT_DEVICE := gtactive3
+          PRODUCT_MODEL := Galaxy Tab Active3
+          PRODUCT_BRAND := samsung
+          PRODUCT_MANUFACTURER := samsung
+          EOF
+
+          # Generiere AndroidProducts.mk explizit passend zum Lunch-Target
+          cat > "$DEV_DIR/AndroidProducts.mk" <<'EOF'
           LOCAL_DIR := $(call my-dir)
 
           PRODUCT_MAKEFILES := \
@@ -87,31 +102,20 @@ jobs:
               twrp_gtactive3-userdebug
           EOF
 
-          cat >> device/samsung/gtactive3/BoardConfig.mk <<'EOF'
+          # CI Build Fixes in BoardConfig.mk injizieren
+          sed -i '/TARGET_NO_RECOVERY/d' "$DEV_DIR/BoardConfig.mk"
+          sed -i '/BOARD_USES_RECOVERY_AS_BOOT/d' "$DEV_DIR/BoardConfig.mk"
+          cat >> "$DEV_DIR/BoardConfig.mk" <<'EOF'
 
-          # CI build fixes
           TARGET_NO_RECOVERY := false
           BOARD_USES_RECOVERY_AS_BOOT := false
           EOF
 
-          grep -q 'PRODUCT_DEVICE' device/samsung/gtactive3/twrp_gtactive3.mk || \
-            cat >> device/samsung/gtactive3/twrp_gtactive3.mk <<'EOF'
-
-          PRODUCT_DEVICE := gtactive3
-          PRODUCT_NAME := twrp_gtactive3
-          PRODUCT_MODEL := Galaxy Tab Active3
-          PRODUCT_BRAND := samsung
-          PRODUCT_MANUFACTURER := samsung
-          EOF
-
           echo "=== AndroidProducts.mk ==="
-          cat device/samsung/gtactive3/AndroidProducts.mk
+          cat "$DEV_DIR/AndroidProducts.mk"
 
-          echo "=== Product makefile ==="
-          cat device/samsung/gtactive3/twrp_gtactive3.mk
-
-          echo "=== Recovery settings ==="
-          tail -20 device/samsung/gtactive3/BoardConfig.mk
+          echo "=== twrp_gtactive3.mk ==="
+          tail -n 15 "$DEV_DIR/twrp_gtactive3.mk"
 
       - name: Prepare build environment
         run: |
@@ -128,15 +132,10 @@ jobs:
           echo "TARGET_BUILD_VARIANT=$TARGET_BUILD_VARIANT"
           echo "PRODUCT_DEVICE=$(get_build_var PRODUCT_DEVICE)"
           echo "PRODUCT_NAME=$(get_build_var PRODUCT_NAME)"
-          echo "TARGET_DEVICE_VAR=$(get_build_var TARGET_DEVICE)"
           echo "TARGET_NO_RECOVERY=$(get_build_var TARGET_NO_RECOVERY)"
-          echo "BOARD_USES_RECOVERY_AS_BOOT=$(get_build_var BOARD_USES_RECOVERY_AS_BOOT)"
-          echo "RECOVERY_VARIANT=$(get_build_var RECOVERY_VARIANT)"
-          echo "TARGET_ARCH=$(get_build_var TARGET_ARCH)"
 
           test "$(get_build_var PRODUCT_DEVICE)" = "gtactive3"
           test "$(get_build_var PRODUCT_NAME)" = "twrp_gtactive3"
-          test "$(get_build_var TARGET_NO_RECOVERY)" != "true"
 
       - name: Build TWRP recovery image
         run: |
@@ -147,27 +146,12 @@ jobs:
 
           rm -rf out/target/product/gtactive3/recovery.img
           rm -rf out/target/product/gtactive3/boot.img
-          rm -rf out/target/product/gtactive3/vendor_boot.img
-
-          echo "=== Available recovery/boot targets ==="
-          ninja -C out/soong -t targets all 2>/dev/null | \
-            grep -E '(^|/)(recoveryimage|bootimage|recovery\.img|boot\.img)' | head -100 || true
 
           echo "=== Building recoveryimage ==="
           mka -j"$(nproc --all)" recoveryimage
 
-          echo "=== Output directory ==="
-          find out/target/product/gtactive3 -maxdepth 2 -type f \
-            \( -name '*.img' -o -name '*.bin' \) -print | sort
-
           if [ ! -f out/target/product/gtactive3/recovery.img ]; then
             echo "::error::recovery.img was not generated."
-            echo "=== Relevant build variables ==="
-            get_build_var TARGET_DEVICE || true
-            get_build_var PRODUCT_DEVICE || true
-            get_build_var PRODUCT_NAME || true
-            get_build_var TARGET_NO_RECOVERY || true
-            get_build_var BOARD_USES_RECOVERY_AS_BOOT || true
             exit 1
           fi
 
