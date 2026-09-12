@@ -45,44 +45,43 @@ jobs:
         cd twrp
         git clone https://github.com/jimenez15690-dot/twrp_gtactive3.git device/samsung/gtactive3
 
-    - name: Patch Device Tree Paths
+    - name: Fix Device Tree Makefiles
       run: |
         cd twrp/device/samsung/gtactive3
-        sed -i 's|vendor/omni/config/common.mk|vendor/twrp/config/common.mk|g' twrp_gtactive3.mk || true
-        sed -i 's|vendor/omni/config/common.mk|vendor/twrp/config/common.mk|g' AndroidProducts.mk || true
+        # Passt omni_ auf twrp_ Präfixe an
+        sed -i 's|vendor/omni/config/common.mk|vendor/twrp/config/common.mk|g' *.mk || true
+        sed -i 's|omni_gtactive3|twrp_gtactive3|g' AndroidProducts.mk || true
+        sed -i 's|omni_gtactive3|twrp_gtactive3|g' twrp_gtactive3.mk || true
+        
+        # Erstellt eine Kopie als fallback_target
+        cp twrp_gtactive3.mk omni_gtactive3.mk || true
 
     - name: Build TWRP Recovery
       run: |
         cd twrp
         export ALLOW_MISSING_DEPENDENCIES=true
         source build/envsetup.sh
-        lunch twrp_gtactive3-eng
-        make bootimage -j$(nproc --all) || make recoveryimage -j$(nproc --all)
+        
+        # Versuche zuerst twrp_gtactive3, sonst Fallback auf omni_gtactive3
+        lunch twrp_gtactive3-eng || lunch omni_gtactive3-eng
+        
+        # Führt den echten Recovery-Build durch
+        mka recoveryimage -j$(nproc --all) || mka bootimage -j$(nproc --all)
 
     - name: Pack Recovery to TAR
       run: |
         cd twrp
         mkdir -p output_images
         
-        # Gezielt im Product-Output-Ordner nach allen gebauten Images suchen
-        OUT_DIR="out/target/product/gtactive3"
+        # Rekursive Suche im gesamten out/ Ordner nach .img Dateien
+        find out/target/product/ -type f -name "*.img" -exec cp {} output_images/ \;
         
-        if [ -d "$OUT_DIR" ]; then
-          cp $OUT_DIR/*.img output_images/ 2>/dev/null || true
-        fi
-        
-        # Fallback: Falls der Ordnername abweicht, den gesamten Target-Ordner durchsuchen
-        if [ -z "$(ls -A output_images)" ]; then
-          find out/target/product/ -maxdepth 2 -name "*.img" -exec cp {} output_images/ \;
-        fi
-
         cd output_images
-        echo "Gefundene Dateien:"
+        echo "=== Gebaute Images ==="
         ls -lh
         
-        # Mindestens eine Datei muss da sein, sonst explizit abbrechen
         if [ -z "$(ls -A .)" ]; then
-          echo "Fehler: Es wurden keine .img Dateien gebaut!"
+          echo "Fehler: Keine Image-Datei generiert."
           exit 1
         fi
         
