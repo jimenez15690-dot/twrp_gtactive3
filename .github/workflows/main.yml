@@ -74,29 +74,25 @@ jobs:
         export LC_ALL=C
         source build/envsetup.sh
         
-        lunch twrp_gtactive3-eng || exit 1
-        mka recoveryimage bootimage -j$(nproc --all)
+        lunch twrp_gtactive3-eng
+        
+        # Baut das Boot- und Recovery-Image explizit
+        mka bootimage recoveryimage -j$(nproc --all)
 
     - name: Pack Recovery
       run: |
         cd twrp
         mkdir -p output_images
         
-        TARGET_DIR="out/target/product/gtactive3"
-        
-        if [ -d "$TARGET_DIR" ]; then
-          find "$TARGET_DIR" -maxdepth 1 -type f -name "*.img" \
-            ! -name "ramdisk*" ! -name "userdata*" ! -name "system*" ! -name "vendor*" \
-            -exec cp {} output_images/ \;
-        fi
-        
-        if [ -z "$(ls -A output_images)" ]; then
-          find out/ -type f -name "*.img" \
-            ! -name "ramdisk*" ! -name "userdata*" ! -name "system*" ! -name "vendor*" \
-            -exec cp {} output_images/ \;
-        fi
+        # Durchsucht das komplette Output-Verzeichnis nach erzeugten Images
+        find out/target/product/ -type f -name "*.img" \
+          ! -name "ramdisk*" ! -name "userdata*" ! -name "system*" ! -name "vendor*" \
+          -exec cp {} output_images/ \;
         
         cd output_images
+        echo "=== Erzeugte Dateien ==="
+        ls -lh
+        
         if [ -z "$(ls -A .)" ]; then
           echo "ERROR: No .img files found!"
           exit 1
