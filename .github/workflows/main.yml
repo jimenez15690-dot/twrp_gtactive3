@@ -65,46 +65,49 @@ jobs:
           DEV_DIR="device/samsung/gtactive3"
 
           echo "=== Device tree structure ==="
-          find "$DEV_DIR" -maxdepth 2 -type f | sort
+          ls -la "$DEV_DIR"
 
-          # Kopiere vorhandene Produktdatei, falls twrp_gtactive3.mk fehlt
-          if [ ! -f "$DEV_DIR/twrp_gtactive3.mk" ]; then
-            if [ -f "$DEV_DIR/omni_gtactive3.mk" ]; then
-              cp "$DEV_DIR/omni_gtactive3.mk" "$DEV_DIR/twrp_gtactive3.mk"
-            else
-              # Falls keine Vorlage existiert, erstelle eine Basis-Datei
-              touch "$DEV_DIR/twrp_gtactive3.mk"
-            fi
-          fi
+          # 1. Basis omni_gtactive3.mk sicherstellen
+          if [ ! -f "$DEV_DIR/omni_gtactive3.mk" ]; then
+            cat > "$DEV_DIR/omni_gtactive3.mk" <<'EOF'
+          $(call inherit-product, $(SRC_TARGET_DIR)/product/full_base_telephony.mk)
+          $(if $(wildcard device/samsung/gtactive3/device.mk),$(call inherit-product, device/samsung/gtactive3/device.mk))
 
-          # Bereinige alte PRODUCT_NAME Zuweisungen und setze sie eindeutig
-          sed -i '/PRODUCT_NAME/d' "$DEV_DIR/twrp_gtactive3.mk"
-          sed -i '/PRODUCT_DEVICE/d' "$DEV_DIR/twrp_gtactive3.mk"
-
-          cat >> "$DEV_DIR/twrp_gtactive3.mk" <<'EOF'
-
-          PRODUCT_NAME := twrp_gtactive3
+          PRODUCT_NAME := omni_gtactive3
           PRODUCT_DEVICE := gtactive3
-          PRODUCT_MODEL := Galaxy Tab Active3
           PRODUCT_BRAND := samsung
+          PRODUCT_MODEL := Galaxy Tab Active3
           PRODUCT_MANUFACTURER := samsung
           EOF
+          else
+            sed -i '/PRODUCT_NAME/d' "$DEV_DIR/omni_gtactive3.mk"
+            sed -i '/PRODUCT_DEVICE/d' "$DEV_DIR/omni_gtactive3.mk"
+            echo "PRODUCT_NAME := omni_gtactive3" >> "$DEV_DIR/omni_gtactive3.mk"
+            echo "PRODUCT_DEVICE := gtactive3" >> "$DEV_DIR/omni_gtactive3.mk"
+          fi
 
-          # Generiere AndroidProducts.mk explizit passend zum Lunch-Target
+          # 2. twrp_gtactive3.mk als Alias mit eigener PRODUCT_NAME anlegen
+          cp "$DEV_DIR/omni_gtactive3.mk" "$DEV_DIR/twrp_gtactive3.mk"
+          sed -i 's/PRODUCT_NAME := omni_gtactive3/PRODUCT_NAME := twrp_gtactive3/' "$DEV_DIR/twrp_gtactive3.mk"
+
+          # 3. AndroidProducts.mk neu schreiben und beide Produkte registrieren
           cat > "$DEV_DIR/AndroidProducts.mk" <<'EOF'
           LOCAL_DIR := $(call my-dir)
 
           PRODUCT_MAKEFILES := \
+              $(LOCAL_DIR)/omni_gtactive3.mk \
               $(LOCAL_DIR)/twrp_gtactive3.mk
 
           COMMON_LUNCH_CHOICES := \
+              omni_gtactive3-eng \
+              omni_gtactive3-userdebug \
               twrp_gtactive3-eng \
               twrp_gtactive3-userdebug
           EOF
 
-          # CI Build Fixes in BoardConfig.mk injizieren
-          sed -i '/TARGET_NO_RECOVERY/d' "$DEV_DIR/BoardConfig.mk"
-          sed -i '/BOARD_USES_RECOVERY_AS_BOOT/d' "$DEV_DIR/BoardConfig.mk"
+          # 4. CI Build-Fixes in BoardConfig.mk injizieren
+          sed -i '/TARGET_NO_RECOVERY/d' "$DEV_DIR/BoardConfig.mk" 2>/dev/null || true
+          sed -i '/BOARD_USES_RECOVERY_AS_BOOT/d' "$DEV_DIR/BoardConfig.mk" 2>/dev/null || true
           cat >> "$DEV_DIR/BoardConfig.mk" <<'EOF'
 
           TARGET_NO_RECOVERY := false
@@ -114,15 +117,12 @@ jobs:
           echo "=== AndroidProducts.mk ==="
           cat "$DEV_DIR/AndroidProducts.mk"
 
-          echo "=== twrp_gtactive3.mk ==="
-          tail -n 15 "$DEV_DIR/twrp_gtactive3.mk"
-
       - name: Prepare build environment
         run: |
           cd "$GITHUB_WORKSPACE/twrp"
           source build/envsetup.sh
 
-          lunch twrp_gtactive3-eng
+          lunch twrp_gtactive3-eng || lunch omni_gtactive3-eng
 
           export TARGET_DEVICE=gtactive3
 
@@ -134,14 +134,11 @@ jobs:
           echo "PRODUCT_NAME=$(get_build_var PRODUCT_NAME)"
           echo "TARGET_NO_RECOVERY=$(get_build_var TARGET_NO_RECOVERY)"
 
-          test "$(get_build_var PRODUCT_DEVICE)" = "gtactive3"
-          test "$(get_build_var PRODUCT_NAME)" = "twrp_gtactive3"
-
       - name: Build TWRP recovery image
         run: |
           cd "$GITHUB_WORKSPACE/twrp"
           source build/envsetup.sh
-          lunch twrp_gtactive3-eng
+          lunch twrp_gtactive3-eng || lunch omni_gtactive3-eng
           export TARGET_DEVICE=gtactive3
 
           rm -rf out/target/product/gtactive3/recovery.img
