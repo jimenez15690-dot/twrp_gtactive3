@@ -6,104 +6,358 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
+
     permissions:
       contents: write
 
     steps:
-    - name: Free Disk Space
-      uses: jlumbroso/free-disk-space@main
-      with:
-        tool-cache: true
-        android: true
-        dotnet: true
-        haskell: true
-        large-packages: true
 
-    - name: Install Build Dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y \
-          bc build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf \
-          imagemagick lib32ncurses5-dev lib32z1-dev liblz4-tool libncurses5 libncurses5-dev \
-          libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool \
-          squashfs-tools xsltproc zip zlib1g-dev python-is-python3 python3
+      # ============================================================
+      # 1. Speicher freigeben
+      # ============================================================
+      - name: Free Disk Space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
 
-    - name: Setup Repo Tool
-      run: |
-        mkdir -p ~/bin
-        curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
-        chmod a+x ~/bin/repo
-        echo "$HOME/bin" >> $GITHUB_PATH
+      # ============================================================
+      # 2. Build-Abhängigkeiten installieren
+      # ============================================================
+      - name: Install Build Dependencies
+        run: |
+          sudo apt-get update
 
-    - name: Initialize TWRP Manifest
-      run: |
-        git config --global user.name "GitHub Actions"
-        git config --global user.email "actions@github.com"
-        mkdir twrp
-        cd twrp
-        repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-11 --depth=1
-        repo sync -c -j4 --force-sync --no-clone-bundle --no-tags
+          sudo apt-get install -y \
+            bc \
+            build-essential \
+            ccache \
+            curl \
+            flex \
+            g++-multilib \
+            gcc-multilib \
+            git \
+            gnupg \
+            gperf \
+            imagemagick \
+            lib32ncurses5-dev \
+            lib32z1-dev \
+            liblz4-tool \
+            libncurses5 \
+            libncurses5-dev \
+            libsdl1.2-dev \
+            libssl-dev \
+            libxml2 \
+            libxml2-utils \
+            lzop \
+            pngcrush \
+            rsync \
+            schedtool \
+            squashfs-tools \
+            xsltproc \
+            zip \
+            zlib1g-dev \
+            python-is-python3 \
+            python3
 
-    - name: Clone Device Tree
-      run: |
-        cd twrp
-        git clone https://github.com/jimenez15690-dot/twrp_gtactive3.git device/samsung/gtactive3
+      # ============================================================
+      # 3. Google Repo Tool installieren
+      # ============================================================
+      - name: Setup Repo Tool
+        run: |
+          mkdir -p "$HOME/bin"
 
-    - name: Fix Makefiles
-      run: |
-        cd twrp/device/samsung/gtactive3
-        
-        if [ -f omni_gtactive3.mk ]; then
-          mv omni_gtactive3.mk twrp_gtactive3.mk
-        fi
-        
-        for file in *.mk; do
-          sed -i 's/omni_/twrp_/g' "$file"
-          sed -i 's|vendor/omni/|vendor/twrp/|g' "$file"
-        done
-        
-        cat > AndroidProducts.mk << 'EOF'
-        PRODUCT_MAKEFILES := $(LOCAL_DIR)/twrp_gtactive3.mk
-        COMMON_LUNCH_CHOICES := twrp_gtactive3-eng twrp_gtactive3-userdebug
-        EOF
+          curl -L \
+            https://storage.googleapis.com/git-repo-downloads/repo \
+            -o "$HOME/bin/repo"
 
-    - name: Build TWRP Recovery
-      run: |
-        cd twrp
-        export ALLOW_MISSING_DEPENDENCIES=true
-        export LC_ALL=C
-        source build/envsetup.sh
-        
-        lunch twrp_gtactive3-eng
-        
-        # Baut das Boot- und Recovery-Image explizit
-        mka bootimage recoveryimage -j$(nproc --all)
+          chmod +x "$HOME/bin/repo"
 
-    - name: Pack Recovery
-      run: |
-        cd twrp
-        mkdir -p output_images
-        
-        # Durchsucht das komplette Output-Verzeichnis nach erzeugten Images
-        find out/target/product/ -type f -name "*.img" \
-          ! -name "ramdisk*" ! -name "userdata*" ! -name "system*" ! -name "vendor*" \
-          -exec cp {} output_images/ \;
-        
-        cd output_images
-        echo "=== Erzeugte Dateien ==="
-        ls -lh
-        
-        if [ -z "$(ls -A .)" ]; then
-          echo "ERROR: No .img files found!"
-          exit 1
-        fi
-        
-        tar -cvf twrp_odin.tar *.img
+          echo "$HOME/bin" >> "$GITHUB_PATH"
 
-    - name: Upload Artifact
-      if: success()
-      uses: actions/upload-artifact@v4
-      with:
-        name: TWRP_SM-T575_Recovery
-        path: twrp/output_images/twrp_odin.tar
-        retention-days: 30
+          "$HOME/bin/repo" --version
+
+      # ============================================================
+      # 4. TWRP Source herunterladen
+      # ============================================================
+      - name: Initialize TWRP Manifest
+        run: |
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+
+          mkdir -p twrp
+          cd twrp
+
+          repo init \
+            -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git \
+            -b twrp-11 \
+            --depth=1
+
+          repo sync \
+            -c \
+            -j"$(nproc --all)" \
+            --force-sync \
+            --no-clone-bundle \
+            --no-tags
+
+      # ============================================================
+      # 5. Device Tree klonen
+      # ============================================================
+      - name: Clone Device Tree
+        run: |
+          cd twrp
+
+          git clone \
+            https://github.com/jimenez15690-dot/twrp_gtactive3.git \
+            device/samsung/gtactive3
+
+          echo "=== Device Tree ==="
+          ls -la device/samsung/gtactive3
+
+      # ============================================================
+      # 6. Device Tree vorbereiten
+      # ============================================================
+      - name: Prepare Device Tree
+        run: |
+          cd twrp/device/samsung/gtactive3
+
+          echo "=== Ursprüngliche Makefiles ==="
+          ls -la *.mk 2>/dev/null || true
+
+          # Omni-Makefile in TWRP-Makefile umbenennen
+          if [ -f omni_gtactive3.mk ]; then
+            mv omni_gtactive3.mk twrp_gtactive3.mk
+          fi
+
+          # Omni-Namen in Makefiles ersetzen
+          for file in *.mk; do
+            if [ -f "$file" ]; then
+              sed -i 's/omni_/twrp_/g' "$file"
+              sed -i 's|vendor/omni/|vendor/twrp/|g' "$file"
+            fi
+          done
+
+          # Produktnamen korrigieren
+          for file in *.mk; do
+            if [ -f "$file" ]; then
+              sed -i \
+                's/PRODUCT_NAME[[:space:]]*:=[[:space:]]*omni_gtactive3/PRODUCT_NAME := twrp_gtactive3/g' \
+                "$file"
+            fi
+          done
+
+          # AndroidProducts.mk neu erstellen
+          cat > AndroidProducts.mk <<'EOF'
+          PRODUCT_MAKEFILES := \
+              $(LOCAL_DIR)/twrp_gtactive3.mk
+
+          COMMON_LUNCH_CHOICES := \
+              twrp_gtactive3-eng \
+              twrp_gtactive3-userdebug
+          EOF
+
+          echo "=== Vorbereiteter Device Tree ==="
+          echo
+          echo "--- AndroidProducts.mk ---"
+          cat AndroidProducts.mk
+          echo
+          echo "--- Makefiles ---"
+          ls -la *.mk
+
+      # ============================================================
+      # 7. Build vorbereiten und Lunch Target prüfen
+      # ============================================================
+      - name: Prepare Build Environment
+        run: |
+          cd twrp
+
+          export ALLOW_MISSING_DEPENDENCIES=true
+          export LC_ALL=C
+
+          source build/envsetup.sh
+
+          echo "=== Verfügbare TWRP Targets ==="
+          lunch 2>/dev/null || true
+
+          echo
+          echo "=== Auswahl des Build Targets ==="
+
+          lunch twrp_gtactive3-eng
+
+          echo
+          echo "=== Build Variablen ==="
+          echo "TARGET_PRODUCT=$TARGET_PRODUCT"
+          echo "TARGET_DEVICE=$TARGET_DEVICE"
+          echo "TARGET_BUILD_VARIANT=$TARGET_BUILD_VARIANT"
+
+      # ============================================================
+      # 8. TWRP bauen
+      # ============================================================
+      - name: Build TWRP Recovery
+        run: |
+          cd twrp
+
+          export ALLOW_MISSING_DEPENDENCIES=true
+          export LC_ALL=C
+
+          source build/envsetup.sh
+
+          lunch twrp_gtactive3-eng
+
+          echo "=== Starte TWRP Build ==="
+
+          mka \
+            recoveryimage \
+            bootimage \
+            -j"$(nproc --all)"
+
+          echo
+          echo "=== Build abgeschlossen ==="
+
+          echo
+          echo "=== Suche nach Images ==="
+
+          find out/target/product -type f \
+            \( -name "*.img" -o -name "*.zip" \) \
+            -print \
+            | sort
+
+      # ============================================================
+      # 9. Build-Ergebnis prüfen
+      # ============================================================
+      - name: Verify Build Output
+        run: |
+          cd twrp
+
+          echo "=== Product Directories ==="
+          find out/target/product -maxdepth 2 -type d -print | sort
+
+          echo
+          echo "=== Alle IMG-Dateien ==="
+
+          find out/target/product \
+            -type f \
+            -name "*.img" \
+            -print \
+            | sort
+
+          echo
+          echo "=== Erwarteter Device-Ordner ==="
+
+          TARGET_DIR="out/target/product/gtactive3"
+
+          if [ ! -d "$TARGET_DIR" ]; then
+            echo "ERROR: Device output directory not found:"
+            echo "$TARGET_DIR"
+            exit 1
+          fi
+
+          echo "Gefunden: $TARGET_DIR"
+
+          echo
+          echo "=== Dateien ==="
+          ls -lah "$TARGET_DIR"
+
+          # Mindestens ein Image muss vorhanden sein
+          IMAGE_COUNT=$(find "$TARGET_DIR" -maxdepth 1 -type f -name "*.img" | wc -l)
+
+          echo
+          echo "Anzahl IMG-Dateien: $IMAGE_COUNT"
+
+          if [ "$IMAGE_COUNT" -eq 0 ]; then
+            echo
+            echo "ERROR: Der Build hat kein IMG erzeugt!"
+            echo
+            echo "=== Build-Verzeichnis ==="
+            find "$TARGET_DIR" -maxdepth 2 -type f -print | sort
+            exit 1
+          fi
+
+      # ============================================================
+      # 10. Odin TAR erstellen
+      # ============================================================
+      - name: Pack Recovery to TAR
+        run: |
+          cd twrp
+
+          TARGET_DIR="out/target/product/gtactive3"
+          OUTPUT_DIR="$PWD/output_images"
+
+          rm -rf "$OUTPUT_DIR"
+          mkdir -p "$OUTPUT_DIR"
+
+          echo "=== Suche Recovery/Boot Images ==="
+
+          # Bevorzugte Images
+          for image in \
+            recovery.img \
+            boot.img \
+            vendor_boot.img
+          do
+            if [ -f "$TARGET_DIR/$image" ]; then
+              cp "$TARGET_DIR/$image" "$OUTPUT_DIR/"
+            fi
+          done
+
+          echo
+          echo "=== Gefundene Images ==="
+          ls -lh "$OUTPUT_DIR" || true
+
+          # Falls recovery.img nicht vorhanden ist,
+          # nach anderen erzeugten Images suchen.
+          if [ ! -f "$OUTPUT_DIR/recovery.img" ] && \
+             [ ! -f "$OUTPUT_DIR/boot.img" ]; then
+
+            echo
+            echo "Kein recovery.img/boot.img gefunden."
+            echo "Durchsuche Output-Verzeichnis..."
+
+            find "$TARGET_DIR" \
+              -maxdepth 1 \
+              -type f \
+              -name "*.img" \
+              -exec cp {} "$OUTPUT_DIR/" \;
+          fi
+
+          echo
+          echo "=== Finale Images ==="
+          ls -lah "$OUTPUT_DIR"
+
+          IMAGE_COUNT=$(find "$OUTPUT_DIR" -maxdepth 1 -type f -name "*.img" | wc -l)
+
+          if [ "$IMAGE_COUNT" -eq 0 ]; then
+            echo
+            echo "ERROR: Keine IMG-Dateien für Odin gefunden!"
+            exit 1
+          fi
+
+          cd "$OUTPUT_DIR"
+
+          echo
+          echo "=== Erstelle Odin TAR ==="
+
+          tar -cvf twrp_SM-T575_odin.tar *.img
+
+          echo
+          echo "=== TAR erstellt ==="
+          ls -lh twrp_SM-T575_odin.tar
+
+          echo
+          echo "=== TAR Inhalt ==="
+          tar -tvf twrp_SM-T575_odin.tar
+
+      # ============================================================
+      # 11. Artifact hochladen
+      # ============================================================
+      - name: Upload Recovery Artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: TWRP_SM-T575_Recovery
+          path: |
+            twrp/output_images/twrp_SM-T575_odin.tar
+          if-no-files-found: error
+          retention-days: 30
